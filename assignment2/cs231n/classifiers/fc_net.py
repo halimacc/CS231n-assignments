@@ -185,6 +185,9 @@ class FullyConnectedNet(object):
         for i in range(1, self.num_layers + 1):
             self.params['W' + str(i)] = weight_scale * np.random.randn(all_dims[i - 1], all_dims[i])
             self.params['b' + str(i)] = np.zeros(all_dims[i])
+            if self.use_batchnorm and i < self.num_layers:
+                self.params['gamma' + str(i)] = np.ones(all_dims[i])
+                self.params['beta' + str(i)] = np.zeros(all_dims[i])
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -245,7 +248,12 @@ class FullyConnectedNet(object):
         h, cache = {}, {}
         h[0] = X
         for i in range(1, self.num_layers):
-            h[i], cache[i] = affine_relu_forward(h[i - 1], self.params['W' + str(i)], self.params['b' + str(i)])
+            if self.use_batchnorm:
+                h[i], cache[i] = affine_bn_relu_forward(h[i - 1], self.params['W' + str(i)], self.params['b' + str(i)],
+                                                       self.params['gamma' + str(i)], self.params['beta' + str(i)],
+                                                       self.bn_params[i - 1])
+            else:
+                h[i], cache[i] = affine_relu_forward(h[i - 1], self.params['W' + str(i)], self.params['b' + str(i)])
         i = self.num_layers
         h[i], cache[i] = affine_forward(h[i - 1], self.params['W' + str(i)], self.params['b' + str(i)])
         
@@ -272,17 +280,23 @@ class FullyConnectedNet(object):
         # automated tests, make sure that your L2 regularization includes a factor #
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
-        d, dW, db = {}, {}, {}
+        d, dW, db, dgamma, dbeta = {}, {}, {}, {}, {}
         i = self.num_layers
         loss, d[i] = softmax_loss(h[i], y)
         d[i - 1], dW[i], db[i] = affine_backward(d[i], cache[i])
         for i in range(self.num_layers - 1, 0, -1):
-            d[i - 1], dW[i], db[i] = affine_relu_backward(d[i], cache[i])
+            if self.use_batchnorm:
+                d[i - 1], dW[i], db[i], dgamma[i], dbeta[i] = affine_bn_relu_backward(d[i], cache[i])
+            else:
+                d[i - 1], dW[i], db[i] = affine_relu_backward(d[i], cache[i])
             
         for i in range(1, self.num_layers + 1):
             loss += self.reg * np.sum(np.square(self.params['W' + str(i)]))
             grads['W' + str(i)] = dW[i] + 2 * self.reg * self.params['W' + str(i)]
-            grads['b' + str(i)] = db[i]# + reg * self.params['b' + str(i)]
+            grads['b' + str(i)] = db[i] + self.reg * self.params['b' + str(i)]
+            if self.use_batchnorm and i < self.num_layers:
+                grads['gamma' + str(i)] = dgamma[i]
+                grads['beta' + str(i)] = dbeta[i]
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
